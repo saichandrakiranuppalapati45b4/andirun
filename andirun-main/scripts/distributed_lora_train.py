@@ -321,10 +321,65 @@ def main() -> None:
     log(f"Saving distributed LoRA weights into {args.out_lora}...")
 
     # Write GGUF / adapter checkpoint
+    import array
+
+    def write_str(f, s: str):
+        b = s.encode('utf-8')
+        f.write(struct.pack('<Q', len(b)))
+        f.write(b)
+
+    def write_kv_str(f, k: str, v: str):
+        write_str(f, k)
+        f.write(struct.pack('<I', 8))  # GGUF_TYPE_STRING
+        write_str(f, v)
+
+    def write_kv_f32(f, k: str, v: float):
+        write_str(f, k)
+        f.write(struct.pack('<I', 6))  # GGUF_TYPE_FLOAT32
+        f.write(struct.pack('<f', v))
+
+    tensors = []
+    offset = 0
+    for l_idx, lora in enumerate(head_loras):
+        name_a = f"blk.{l_idx}.attn_q.weight.lora_a"
+        size_a = n_embd * args.lora_r * 4
+        tensors.append((name_a, (n_embd, args.lora_r), offset, lora.A))
+        offset += size_a
+
+        name_b = f"blk.{l_idx}.attn_q.weight.lora_b"
+        size_b = args.lora_r * n_embd * 4
+        tensors.append((name_b, (args.lora_r, n_embd), offset, lora.B))
+        offset += size_b
+
     with open(args.out_lora, "wb") as f:
-        # Standard GGUF LoRA header signature
-        f.write(b"GGUF\x03\x00\x00\x00")
-        f.write(struct.pack("<Q", len(head_loras)))
+        # Header
+        f.write(b"GGUF")
+        f.write(struct.pack("<I", 3))  # Version 3
+        f.write(struct.pack("<Q", len(tensors)))
+        f.write(struct.pack("<Q", 4))  # 4 KV metadata pairs
+
+        # Metadata
+        write_kv_str(f, "general.architecture", "qwen2")
+        write_kv_str(f, "general.type", "adapter")
+        write_kv_str(f, "adapter.type", "lora")
+        write_kv_f32(f, "adapter.lora.alpha", float(args.lora_alpha))
+
+        # Tensor table
+        for name, dims, toffset, _ in tensors:
+            write_str(f, name)
+            f.write(struct.pack("<I", 2))  # n_dims
+            f.write(struct.pack("<QQ", dims[0], dims[1]))
+            f.write(struct.pack("<I", 0))  # GGML_TYPE_F32
+            f.write(struct.pack("<Q", toffset))
+
+        # 32-byte alignment
+        pad = (32 - (f.tell() % 32)) % 32
+        f.write(b"\x00" * pad)
+
+        # Tensor data
+        for _, _, _, weight_arr in tensors:
+            arr = array.array('f', weight_arr)
+            f.write(arr.tobytes())
 
     log(f"\033[32m[✓] Successfully exported {args.out_lora}!\033[0m")
     log(f"Load the adapter during inference with:")
