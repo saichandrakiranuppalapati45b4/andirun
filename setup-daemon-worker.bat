@@ -6,52 +6,71 @@ echo [*] AndiRun Background Daemon Setup (No Termux Needed)
 echo [*] ============================================================
 
 set "ADB=C:\projects\andirun\platform-tools\adb.exe"
-if not exist "%ADB%" (
-    set "ADB=adb"
+if not exist "%ADB%" set "ADB=adb"
+
+echo [*] Checking connected Android devices via %ADB%...
+"%ADB%" devices > "%TEMP%\andirun_devices.txt" 2>&1
+
+set "DEVICE="
+for /f "skip=1 tokens=1,2" %%A in (%TEMP%\andirun_devices.txt) do (
+    if "%%B"=="device" (
+        set "DEVICE=%%A"
+        goto :found_device
+    )
 )
 
-echo [*] Checking connected Android devices...
-for /f "tokens=1" %%d in ('"%ADB%" devices ^| findstr /R /C:"[a-zA-Z0-9].*device$"') do (
-    set "DEVICE=%%d"
-    goto :found_device
+if not defined DEVICE (
+    type "%TEMP%\andirun_devices.txt"
+    echo [-] Error: No Android phone detected via USB debugging.
+    echo [*] Ensure phone is connected via USB-C with USB Debugging enabled.
+    del "%TEMP%\andirun_devices.txt" >nul 2>&1
+    exit /b 1
 )
-
-echo [-] Error: No Android phone detected via USB debugging.
-exit /b 1
 
 :found_device
-echo [✓] Connected Phone: !DEVICE!
+del "%TEMP%\andirun_devices.txt" >nul 2>&1
+echo [✓] Connected Phone: %DEVICE%
 
 echo [*] Checking for llama-split-prefill in /data/local/tmp/...
-"%ADB%" -s !DEVICE! shell "test -x /data/local/tmp/llama-split-prefill && echo FOUND" | findstr "FOUND" >nul
+"%ADB%" -s %DEVICE% shell "test -x /data/local/tmp/llama-split-prefill && echo FOUND" > "%TEMP%\andirun_bin_check.txt" 2>&1
+findstr "FOUND" "%TEMP%\andirun_bin_check.txt" >nul 2>&1
+del "%TEMP%\andirun_bin_check.txt" >nul 2>&1
+
 if %errorlevel% equ 0 (
     echo [✓] /data/local/tmp/llama-split-prefill already installed and executable!
     goto :start_daemon
 )
 
-echo [*] Searching for compiled binary inside Termux storage...
-for /f "tokens=*" %%f in ('"%ADB%" -s !DEVICE! shell "find /data/data/com.termux/files/home -name llama-split-prefill 2>/dev/null"') do (
-    set "TERMUX_BIN=%%f"
-    goto :copy_from_termux
+echo [*] Worker binary not yet in /data/local/tmp/.
+echo [*] Checking if Termux can copy it to /data/local/tmp/...
+"%ADB%" -s %DEVICE% shell "su -c 'cp /data/data/com.termux/files/home/andirun/andirun-main/llama.cpp/build/bin/llama-split-prefill /data/local/tmp/' 2>/dev/null"
+"%ADB%" -s %DEVICE% shell "chmod 755 /data/local/tmp/llama-split-prefill 2>/dev/null"
+
+"%ADB%" -s %DEVICE% shell "test -x /data/local/tmp/llama-split-prefill && echo FOUND" > "%TEMP%\andirun_bin_check.txt" 2>&1
+findstr "FOUND" "%TEMP%\andirun_bin_check.txt" >nul 2>&1
+del "%TEMP%\andirun_bin_check.txt" >nul 2>&1
+
+if %errorlevel% equ 0 (
+    echo [✓] Successfully staged worker binary to /data/local/tmp/!
+    goto :start_daemon
 )
 
-echo [-] Could not locate llama-split-prefill automatically.
-echo [*] If you have llama-split-prefill on your PC, you can push it directly:
-echo [*]   adb push llama-split-prefill /data/local/tmp/
-exit /b 1
-
-:copy_from_termux
-echo [✓] Found Termux binary at !TERMUX_BIN!
-echo [*] Installing to /data/local/tmp/llama-split-prefill...
-"%ADB%" -s !DEVICE! shell "cp '!TERMUX_BIN!' /data/local/tmp/llama-split-prefill && chmod 755 /data/local/tmp/llama-split-prefill"
+echo [!] Notice: The binary is inside Termux's private storage.
+echo [*] Please run this one-line command inside Termux on your phone ONCE:
+echo.
+echo     cp ~/andirun/andirun-main/llama.cpp/build/bin/llama-split-prefill /data/local/tmp/ && chmod 755 /data/local/tmp/llama-split-prefill
+echo.
+echo [*] Once copied, you never have to open Termux again!
+echo [*] Press any key after running the command in Termux...
+pause >nul
 
 :start_daemon
 echo [*] Launching background daemon on port 8080...
-"%ADB%" -s !DEVICE! shell "pkill -f llama-split-prefill 2>/dev/null; nohup /data/local/tmp/llama-split-prefill --serve-tail 8080 --tail-model /data/local/tmp/tail-L20.gguf > /data/local/tmp/worker.log 2>&1 &"
+"%ADB%" -s %DEVICE% shell "pkill -f llama-split-prefill 2>/dev/null; nohup /data/local/tmp/llama-split-prefill --serve-tail 8080 --tail-model /data/local/tmp/tail-L20.gguf > /data/local/tmp/worker.log 2>&1 &"
 
 timeout /t 2 /nobreak >nul
 
-echo [*] Testing port 8080 forward...
-"%ADB%" -s !DEVICE! forward tcp:8080 tcp:8080
-echo [✓] Background worker daemon is running on phone!
+echo [*] Configuring port 8080 USB forward...
+"%ADB%" -s %DEVICE% forward tcp:8080 tcp:8080
+echo [✓] Background worker daemon is running on phone (:8080)!
 echo [✓] You can now run serve_win_android.py without opening Termux.
