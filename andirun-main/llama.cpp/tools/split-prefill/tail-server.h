@@ -280,6 +280,9 @@ public:
         if (srv == INVALID_SOCK) return std::string("socket: ") + std::to_string(spt_sock_errno());
         int one = 1;
         setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char *) &one, sizeof(one));
+#ifdef SO_REUSEPORT
+        setsockopt(srv, SOL_SOCKET, SO_REUSEPORT, (const char *) &one, sizeof(one));
+#endif
         sockaddr_in addr = {};
         addr.sin_family = AF_INET;
         addr.sin_port = htons((uint16_t) port);
