@@ -216,7 +216,21 @@ def main():
     sptl_status = probe_sptl_worker("127.0.0.1", args.tail_port)
     if not sptl_status:
         log("Tail worker not currently answering on Android.")
-        remote_tail_path = f"/data/local/tmp/tail-L{args.split_layer}.gguf"
+        adb_bin = get_adb_binary()
+        tail_candidates = [
+            f"/sdcard/Download/tail-L{args.split_layer}.gguf",
+            f"/data/local/tmp/tail-L{args.split_layer}.gguf",
+            "/sdcard/Download/tail.gguf",
+            "/data/local/tmp/tail.gguf",
+        ]
+        remote_tail_path = None
+        for cand in tail_candidates:
+            if subprocess.call([adb_bin, "-s", target_device, "shell", f"test -f {cand}"]) == 0:
+                remote_tail_path = cand
+                break
+        if not remote_tail_path:
+            remote_tail_path = f"/sdcard/Download/tail-L{args.split_layer}.gguf"
+
         log(f"Attempting to launch worker daemon on phone with {remote_tail_path}...")
         start_worker_on_phone(target_device, remote_tail_path, args.tail_port)
         
