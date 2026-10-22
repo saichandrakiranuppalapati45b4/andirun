@@ -81,60 +81,97 @@ def main() -> None:
 
     log(f"Connected Phone: \033[32m{device}\033[0m")
 
-    # Step 1: Check if /data/local/tmp/llama-split-prefill is already installed
+    # Step 1: Check if /data/local/tmp/llama-split-prefill is already installed and non-empty
     log("Checking /data/local/tmp/llama-split-prefill...")
-    res = subprocess.call([adb, "-s", device, "shell", "test -x /data/local/tmp/llama-split-prefill"])
+    res = subprocess.call([adb, "-s", device, "shell", "test -s /data/local/tmp/llama-split-prefill"])
     installed = (res == 0)
 
     if not installed:
         # Step 2: Try copying from /sdcard/Download/
         log("Checking for staged binary in /sdcard/Download/...")
-        sd_res = subprocess.call([adb, "-s", device, "shell", "test -f /sdcard/Download/llama-split-prefill"])
+        sd_res = subprocess.call([adb, "-s", device, "shell", "test -s /sdcard/Download/llama-split-prefill"])
         
         if sd_res != 0:
             print("\n" + "=" * 60)
             print("\033[33m[ACTION NEEDED IN TERMUX]\033[0m")
-            print("Please run this command in Termux ONCE to copy the binary to Downloads:")
-            print("\n    \033[1mcp ~/andirun/andirun-main/llama.cpp/build/bin/llama-split-prefill /sdcard/Download/\033[0m\n")
+            print("Please run this command in Termux ONCE to stage the binary and libraries:")
+            print("\n    \033[1mcd ~/andirun/andirun-main/llama.cpp && cp build/bin/llama-split-prefill build/bin/*.so $PREFIX/lib/libc++_shared.so ~/storage/downloads/ 2>/dev/null\033[0m\n")
             print("=" * 60)
-            input("Press Enter after copying in Termux...")
+            input("Press Enter after running the command in Termux...")
 
         log("Installing to /data/local/tmp/llama-split-prefill via ADB...")
-        subprocess.call([adb, "-s", device, "shell", "cp /sdcard/Download/llama-split-prefill /data/local/tmp/llama-split-prefill"])
-        subprocess.call([adb, "-s", device, "shell", "chmod 755 /data/local/tmp/llama-split-prefill"])
+        subprocess.call([adb, "-s", device, "shell", "cp /sdcard/Download/llama-split-prefill /data/local/tmp/llama-split-prefill 2>/dev/null"])
+        subprocess.call([adb, "-s", device, "shell", "cp /sdcard/Download/*.so /data/local/tmp/ 2>/dev/null"])
+        subprocess.call([adb, "-s", device, "shell", "chmod 755 /data/local/tmp/llama-split-prefill /data/local/tmp/*.so 2>/dev/null"])
 
     # Verify installation
-    check = subprocess.call([adb, "-s", device, "shell", "test -x /data/local/tmp/llama-split-prefill"])
+    check = subprocess.call([adb, "-s", device, "shell", "test -s /data/local/tmp/llama-split-prefill"])
     if check != 0:
-        error("Failed to install worker to /data/local/tmp/. Please ensure it was copied in Termux.")
+        error("Worker binary in /data/local/tmp/ is missing or empty. Please run the staging command in Termux.")
         sys.exit(1)
 
     log("\033[32m[✓] Worker binary is installed and executable at /data/local/tmp/llama-split-prefill!\033[0m")
 
-    # Step 3: Launch daemon
-    log("Stopping any previous worker instances...")
-    subprocess.call([adb, "-s", device, "shell", "pkill -f llama-split-prefill"])
+    # Step 3: Find tail model
+    tail_candidates = [
+        "/data/local/tmp/tail-L20.gguf",
+        "/sdcard/Download/tail-L20.gguf",
+        "/data/local/tmp/tail.gguf",
+        "/sdcard/Download/tail.gguf",
+    ]
+    tail_model = None
+    for cand in tail_candidates:
+        if subprocess.call([adb, "-s", device, "shell", f"test -f {cand}"]) == 0:
+            tail_model = cand
+            break
 
-    tail_model = "/data/local/tmp/tail-L20.gguf"
+    if not tail_model:
+        error("Could not find tail model on phone (/sdcard/Download/tail-L20.gguf or /data/local/tmp/tail-L20.gguf).")
+        log("Please ensure `split-gguf.py` was used to push `tail-L20.gguf` to phone via ADB.")
+        sys.exit(1)
+
+    log(f"Using tail model: \033[32m{tail_model}\033[0m")
+
+    # Step 4: Stop previous instances and launch daemon
+    log("Stopping any previous worker instances...")
+    subprocess.call([adb, "-s", device, "shell", "pkill -f llama-split-prefill 2>/dev/null"])
+    time.sleep(1)
+
     log(f"Launching background daemon on phone (:8080) with {tail_model}...")
     launch_cmd = [
         adb, "-s", device, "shell",
+        f"export LD_LIBRARY_PATH=/data/local/tmp:$LD_LIBRARY_PATH; "
         f"nohup /data/local/tmp/llama-split-prefill --serve-tail 8080 --tail-model {tail_model} > /data/local/tmp/worker.log 2>&1 &"
     ]
     subprocess.call(launch_cmd)
     time.sleep(2)
 
-    # Step 4: Set up port forwarding
+    # Step 5: Set up port forwarding
     log("Configuring USB port forwarding (127.0.0.1:8080 -> Phone)...")
     subprocess.call([adb, "-s", device, "forward", "tcp:8080", "tcp:8080"])
     subprocess.call([adb, "-s", device, "forward", "tcp:50062", "tcp:50062"])
 
-    # Step 5: Probe worker
-    if probe_worker(8080):
+    # Step 6: Probe worker
+    sptl_ok = False
+    for attempt in range(5):
+        if probe_worker(8080):
+            sptl_ok = True
+            break
+        time.sleep(1)
+
+    if sptl_ok:
         log("\033[32m[✓] SUCCESS: Android worker daemon is active and responding on port 8080!\033[0m")
         log("\033[32m[✓] You can now close Termux completely. The worker will run automatically.\033[0m")
     else:
-        log("\033[32m[✓] Background worker daemon launched on phone.\033[0m")
+        log("\033[33m[!] Warning: Worker daemon was launched, but did not respond on port 8080.\033[0m")
+        try:
+            log_content = subprocess.check_output([adb, "-s", device, "shell", "cat /data/local/tmp/worker.log"], text=True)
+            if log_content.strip():
+                log("--- Phone worker.log output ---")
+                print(log_content.strip())
+                log("-------------------------------")
+        except Exception:
+            pass
 
     log("=" * 60)
     log("Ready! Now run:")

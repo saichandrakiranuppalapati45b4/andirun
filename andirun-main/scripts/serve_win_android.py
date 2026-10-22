@@ -143,25 +143,34 @@ def start_worker_on_phone(serial: str | None, tail_model_remote: str, port: int 
     # Strategy 2: Check for executable in /data/local/tmp/
     remote_bin = "/data/local/tmp/llama-split-prefill"
     try:
-        res = subprocess.check_output(cmd_base + ["shell", f"test -x {remote_bin} && echo OK"], text=True).strip()
+        res = subprocess.check_output(cmd_base + ["shell", f"test -s {remote_bin} && echo OK"], text=True).strip()
         if "OK" in res:
             log(f"Launching Android daemon: {remote_bin} --serve-tail {port} --tail-model {tail_model_remote}")
-            launch_cmd = cmd_base + ["shell", f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"]
+            launch_cmd = cmd_base + [
+                "shell",
+                f"export LD_LIBRARY_PATH=/data/local/tmp:$LD_LIBRARY_PATH; "
+                f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"
+            ]
             subprocess.call(launch_cmd)
             time.sleep(2)
             return True
     except subprocess.CalledProcessError:
         pass
 
-    # Strategy 3: Check Termux installation path on device
+    # Strategy 3: Check staged binary in /sdcard/Download/
     try:
-        check_termux = cmd_base + ["shell", "find /data/data/com.termux/files/home -name 'llama-split-prefill' 2>/dev/null"]
-        t_out = subprocess.check_output(check_termux, text=True).strip()
-        if t_out:
-            t_bin = t_out.splitlines()[0]
-            log(f"Found Termux binary at {t_bin}. Staging to /data/local/tmp/llama-split-prefill...")
-            subprocess.call(cmd_base + ["shell", f"cp '{t_bin}' {remote_bin} && chmod 755 {remote_bin}"])
-            launch_cmd = cmd_base + ["shell", f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"]
+        sd_check = subprocess.check_output(cmd_base + ["shell", "test -s /sdcard/Download/llama-split-prefill && echo OK"], text=True).strip()
+        if "OK" in sd_check:
+            log("Staging worker binary and libraries from /sdcard/Download/ to /data/local/tmp/...")
+            subprocess.call(cmd_base + ["shell", "cp /sdcard/Download/llama-split-prefill /data/local/tmp/ 2>/dev/null"])
+            subprocess.call(cmd_base + ["shell", "cp /sdcard/Download/*.so /data/local/tmp/ 2>/dev/null"])
+            subprocess.call(cmd_base + ["shell", "chmod 755 /data/local/tmp/llama-split-prefill /data/local/tmp/*.so 2>/dev/null"])
+            log(f"Launching Android daemon: {remote_bin} --serve-tail {port} --tail-model {tail_model_remote}")
+            launch_cmd = cmd_base + [
+                "shell",
+                f"export LD_LIBRARY_PATH=/data/local/tmp:$LD_LIBRARY_PATH; "
+                f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"
+            ]
             subprocess.call(launch_cmd)
             time.sleep(2)
             return True
@@ -169,8 +178,10 @@ def start_worker_on_phone(serial: str | None, tail_model_remote: str, port: int 
         pass
 
     error(f"Neither AndiRun App nor {remote_bin} is active or installed.")
-    log("Install the Android App with: cd andirun-android && .\\gradlew installDebug")
-    log("Or copy your worker binary: adb push llama-split-prefill /data/local/tmp/")
+    log("Option A (Zero-Termux Daemon): Run .\\setup-daemon-worker.ps1 to install background worker.")
+    log("Option B (Termux manual): Run inside Termux:")
+    log("   cd ~/andirun/andirun-main/llama.cpp")
+    log(f"   ./build/bin/llama-split-prefill --serve-tail {port} --tail-model {tail_model_remote}")
     return False
 
 def main():
@@ -220,6 +231,14 @@ def main():
         log("\033[32m[✓] Android Split-Prefill Worker is READY!\033[0m")
     else:
         error("Could not establish connection with Android worker. Please ensure `llama-split-prefill` or the Android app is running.")
+        try:
+            log_content = subprocess.check_output([get_adb_binary(), "-s", target_device, "shell", "cat /data/local/tmp/worker.log"], text=True)
+            if log_content.strip():
+                log("--- Phone worker.log output ---")
+                print(log_content.strip())
+                log("-------------------------------")
+        except Exception:
+            pass
         sys.exit(1)
 
     # Check Phone Attn worker (:50062)
