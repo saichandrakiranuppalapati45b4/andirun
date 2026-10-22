@@ -69,6 +69,7 @@
 #include <mach/mach.h>
 #endif
 
+#if defined(__APPLE__) && defined(__aarch64__)
 extern "C" {
 void * sme_ws_new(void);
 void   sme_attn_partial(void * w, const float * Q, int qrs, const uint8_t * K, const uint8_t * V, size_t rs,
@@ -78,6 +79,17 @@ void * sme_pipe_new(int nh);
 void   sme_attn_pipe(void ** pp, int nw, int nh, const float * Q, const uint8_t * K, const uint8_t * V, size_t rs, size_t hb,
                      int is_q8, int nkv, int nk, float scale, float * O, float * m, float * l);
 }
+#else
+extern "C" {
+inline void * sme_ws_new(void) { return nullptr; }
+inline void   sme_attn_partial(void *, const float *, int, const uint8_t *, const uint8_t *, size_t,
+                               int, int, float, int, float *, float *, float *) {}
+inline int    sme2_available(void) { return 0; }
+inline void * sme_pipe_new(int) { return nullptr; }
+inline void   sme_attn_pipe(void **, int, int, const float *, const uint8_t *, const uint8_t *, size_t, size_t,
+                            int, int, int, float, float *, float *, float *) {}
+}
+#endif
 
 namespace pa {
 

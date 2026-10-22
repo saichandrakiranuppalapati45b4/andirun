@@ -62,6 +62,14 @@ enum msg_type : uint32_t {
     //   STATE_RANGE range_req                      -> STATE_DATA blob  (this tail's state: KV rows [p0, p1) and/or recurrent)
     //   CHUNK       want_logits bit 1: also return the tap-layer inputs of the chunk (f16, n_taps x n_tok x n_embd) after the logits
     MSG_TRIM, MSG_SYNC, MSG_OK, MSG_STATE_RANGE,
+    // Distributed LoRA Training (v3):
+    //   TRAIN_CHUNK    train_chunk_req + activation -> TRAIN_CHUNK_ACK + loss
+    //   TRAIN_GRAD     train_grad_req               -> TRAIN_GRAD_DATA + grad_resid (reverse gradient streaming)
+    //   TRAIN_STEP     train_step_req               -> OK
+    //   TRAIN_SAVE     train_save_req               -> OK + lora_weights blob
+    MSG_TRAIN_CHUNK = 20, MSG_TRAIN_CHUNK_ACK,
+    MSG_TRAIN_GRAD, MSG_TRAIN_GRAD_DATA,
+    MSG_TRAIN_STEP, MSG_TRAIN_SAVE,
 };
 
 enum resid_dtype : uint32_t { DT_F32 = 0, DT_F16 = 1 };
@@ -92,6 +100,11 @@ struct hello_rep2 { hello_rep base; uint32_t n_valid; uint64_t session; };
 struct sync_req   { uint32_t flags, n_valid_after; };          // flags: 1 KV rows (appended), 2 recurrent (replaced)
 struct range_req  { int32_t p0, p1; uint32_t flags; };         // flags as sync_req
 struct chunk_rep { uint32_t status, n_tok, n_logits; float compute_ms; };
+struct train_chunk_req { uint32_t n_tok, n_embd, dtype, compute_loss; };
+struct train_chunk_ack { uint32_t status; float loss, compute_ms; };
+struct train_grad_req  { uint32_t n_tok, n_embd, dtype; };
+struct train_step_req  { float lr, wd, clip; };
+struct train_save_req  { uint32_t fmt; };
 #pragma pack(pop)
 
 // ---- socket helpers ---------------------------------------------------------------------------

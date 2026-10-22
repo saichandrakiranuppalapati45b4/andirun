@@ -189,6 +189,37 @@ Simply open your web browser and navigate to:
 
 ---
 
+## 🔬 Advanced Capabilities
+
+### 1. 🧬 Distributed LoRA Training (Reverse Gradient Streaming)
+Fine-tune large language models across your Windows PC and Android phone by pooling both devices' RAM:
+- Intermediate activations $h_L$ stream forward to the phone over USB.
+- The phone computes loss and streams **reverse gradients $\nabla h_L$ backward** across USB to the PC.
+- Head and tail LoRA parameters are updated using each device's local AdamW optimizer.
+```powershell
+python andirun-main\scripts\distributed_lora_train.py -m qwen-7b.gguf -L 20 -d corpus.txt -o andirun-lora.gguf
+```
+*Full documentation: [DISTRIBUTED-LORA.md](file:///mnt/c/projects/andirun/andirun-main/docs/DISTRIBUTED-LORA.md)*
+
+### 2. ⚡ Vulkan Attention Offload (`phone-attn`)
+Offload up to **128k+ tokens** of quantized KV cache (`q8_0`, `q4_0`, `fp16`) to the Android phone's GPU (Adreno / Mali) via high-performance Vulkan Compute shaders:
+```bash
+# On Android (Termux):
+cd andirun/andirun-main/phone-attn
+bash build.sh
+./build/pa-tool serve 50062
+```
+*Full documentation: [VULKAN-ATTENTION.md](file:///mnt/c/projects/andirun/andirun-main/docs/VULKAN-ATTENTION.md)*
+
+### 3. 🌐 Multi-Device Mesh (2+ Android Phones)
+Chain multiple Android devices together over separate USB-C cables to partition massive models across a distributed hardware cluster:
+```powershell
+python andirun-main\scripts\mesh_orchestrator.py -m qwen-7b.gguf --total-layers 28 --host-share 0.5
+```
+*Full documentation: [MULTI-DEVICE-MESH.md](file:///mnt/c/projects/andirun/andirun-main/docs/MULTI-DEVICE-MESH.md)*
+
+---
+
 ## 🔮 Roadmap
 
 - [x] Cross-platform WinSock2 socket layer
@@ -196,9 +227,9 @@ Simply open your web browser and navigate to:
 - [x] Windows MSVC + Ninja build automation
 - [x] Zero-config ADB bridge orchestrator
 - [x] End-to-end verified inference (Qwen2.5-7B)
-- [ ] **Distributed LoRA Training**: Reverse gradient streaming over USB (PC backward $\leftrightarrow$ Phone backward)
-- [ ] **Vulkan Attention Offload**: Porting `phone-attn` to Vulkan Compute for 128k+ long context
-- [ ] **Multi-Device Mesh**: Distributing layers across 2+ Android phones simultaneously
+- [x] **Distributed LoRA Training**: Reverse gradient streaming over USB (PC backward $\leftrightarrow$ Phone backward)
+- [x] **Vulkan Attention Offload**: Porting `phone-attn` to Vulkan Compute for 128k+ long context
+- [x] **Multi-Device Mesh**: Distributing layers across 2+ Android phones simultaneously
 
 ---
 

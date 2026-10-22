@@ -27,6 +27,8 @@ def main() -> None:
     ap.add_argument("src")
     ap.add_argument("dst")
     ap.add_argument("-L", type=int, required=True, help="first tail layer (multiple of full_attention_interval)")
+    ap.add_argument("--until", type=int, default=0, help="exclusive end layer for multi-device mesh stage (default: end of model)")
+    ap.add_argument("--stage-name", default="", help="custom name for multi-device mesh stage (e.g. stage-1-phone1)")
     ap.add_argument("--keep-mtp", action="store_true", help="keep the NextN/MTP block(s) (renumbered after the tail trunk)")
     ap.add_argument("--no-head", action="store_true",
                     help="drop token_embd and output (1.1 GB on the 27B): the worker gets residuals, never tokens, and the "
@@ -50,11 +52,14 @@ def main() -> None:
     f_int = r.get_field(kv("full_attention_interval"))
     interval = f_int.contents() if f_int else 4
     L = args.L
+    L_end = args.until if (args.until and args.until <= n_trunk) else n_trunk
     if not (0 < L < n_trunk) or L % interval != 0:
         sys.exit(f"L={L} must be a multiple of {interval} in (0, {n_trunk})")
+    if L_end <= L:
+        sys.exit(f"--until={L_end} must be greater than L={L}")
 
-    n_tail_trunk = n_trunk - L
-    n_tail_nextn = n_nextn if args.keep_mtp else 0
+    n_tail_trunk = L_end - L
+    n_tail_nextn = n_nextn if (args.keep_mtp and L_end == n_trunk) else 0
 
     w = gguf.GGUFWriter(args.dst, arch)
     for f in r.fields.values():
@@ -66,41 +71,37 @@ def main() -> None:
         if f.name == kv("block_count"):
             val = n_tail_trunk + n_tail_nextn
         elif f.name == kv("nextn_predict_layers"):
-            if not args.keep_mtp:
+            if not args.keep_mtp or L_end < n_trunk:
                 continue
         elif f.name == gguf.Keys.General.NAME:
-            val = f"{val} [tail L={L}]"
+            stage_desc = args.stage_name or f"mesh L={L}..{L_end}"
+            val = f"{val} [{stage_desc}]"
         elif isinstance(val, list) and len(val) in (n_all, n_trunk) and not f.name.startswith("tokenizer."):
-            # per-layer array (e.g. attention.recurrent_layers, which newer converters write): the loader requires its length
-            # to equal block_count, so keep the tail's trunk layers, then the NextN entries if those blocks are kept
-            val = val[L:n_trunk] + (val[n_trunk:] if args.keep_mtp else [])
+            # per-layer array: keep the tail's trunk layers, then NextN if final stage
+            val = val[L:L_end] + (val[n_trunk:] if (args.keep_mtp and L_end == n_trunk) else [])
         w.add_key_value(f.name, val, val_type, sub_type=sub_type)
     w.add_uint32("split.layer_start", L)
+    w.add_uint32("split.layer_end", L_end)
     w.add_uint32("split.n_layer_full", n_trunk)
     if args.no_ffn or args.no_ffn_first:
         w.add_uint32("split.no_ffn", 1)
-    if args.no_head:
+    if args.no_head or L_end < n_trunk:
         w.add_uint32("split.no_head", 1)
 
     keep = []
     for t in r.tensors:
         m = BLK.match(t.name)
         if not m:
-            if args.no_head and t.name in ("token_embd.weight", "output.weight"):
+            if (args.no_head or L_end < n_trunk) and t.name in ("token_embd.weight", "output.weight"):
                 continue
             keep.append((t.name, t))
             continue
         il, rest = int(m.group(1)), m.group(2)
-        if il < L:
+        if il < L or il >= L_end:
             continue
         if (args.no_ffn or il < L + args.no_ffn_first) and il < n_trunk and rest in ("ffn_gate.weight", "ffn_up.weight", "ffn_down.weight"):
             continue
-        if il >= n_trunk:
-            if not args.keep_mtp:
-                continue
-            new_il = n_tail_trunk + (il - n_trunk)
-        else:
-            new_il = il - L
+        new_il = il - L
         keep.append((f"blk.{new_il}.{rest}", t))
 
     total = 0

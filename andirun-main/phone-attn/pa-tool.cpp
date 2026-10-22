@@ -4,10 +4,7 @@
 //                                              reference (layer 0), then time ATTN round trips
 // Build: phone-attn/build.sh
 #include "phone-attn.h"
-#ifdef __OBJC__
-#include "pa-ane.mm"   // built as Objective-C++ (build.sh): the ANE page engine, PA_ANE_TEMPLATE=dir.mlmodelc
-#include "pa-metal.mm"  // PA_GPU=1: the phone's GPU engine on this Mac's GPU (kernel correctness without a phone)
-#endif
+#include "pa-vulkan.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -57,26 +54,17 @@ int main(int argc, char ** argv) {
         int thr = argc > 3 ? atoi(argv[3]) : 2;
         pa::status st;
         pa::engine * gpu = nullptr;
-#ifdef __OBJC__
-        if (getenv("PA_GPU") && atoi(getenv("PA_GPU"))) {
-            auto * m = new pa::metal_engine();
-            if (!m->init()) { fprintf(stderr, "GPU engine off: %s\n", m->error.c_str()); delete m; } else gpu = m;
-        }
-#endif
-        pa::server srv(&st, [](const std::string & s) { fprintf(stderr, "%s\n", s.c_str()); }, thr, gpu);
-#ifdef __OBJC__
-        // PA_ANE_TEMPLATE: old keys on this Mac's Neural Engine (bit-identical to the phone's for these models): the accuracy gate
-        if (const char * t = getenv("PA_ANE_TEMPLATE")) {
-            auto * ane = new pa::ane_engine();
-            const size_t mb = getenv("PA_ANE_MB") ? (size_t) atoll(getenv("PA_ANE_MB")) : 4096;
-            if (!ane->init(t, std::string(getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp") + "/pa-anekv", mb)) {
-                fprintf(stderr, "ANE engine off: %s\n", ane->error.c_str()); delete ane;
+        if (!getenv("PA_NO_GPU") || atoi(getenv("PA_NO_GPU")) == 0) {
+            auto * v = new pa::vulkan_engine();
+            if (!v->init()) {
+                fprintf(stderr, "Vulkan engine off: %s\n", v->error.c_str());
+                delete v;
             } else {
-                fprintf(stderr, "ANE page engine: %u keys per page, budget %zu MB\n", ane->page_keys(), mb);
-                srv.set_page_engine(ane);
+                fprintf(stderr, "Vulkan attention accelerator initialized: %s\n", v->describe().c_str());
+                gpu = v;
             }
         }
-#endif
+        pa::server srv(&st, [](const std::string & s) { fprintf(stderr, "%s\n", s.c_str()); }, thr, gpu);
         fprintf(stderr, "%s\n", srv.serve(port).c_str());
         return 1;
     }
