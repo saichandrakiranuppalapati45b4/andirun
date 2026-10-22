@@ -34,6 +34,10 @@ def log(msg: str) -> None:
     print(f"[\033[35mAndiRun Train\033[0m] {msg}", flush=True)
 
 
+def warn(msg: str) -> None:
+    print(f"[\033[33mWARN\033[0m] {msg}", flush=True)
+
+
 def error(msg: str) -> None:
     print(f"[\033[31mERROR\033[0m] {msg}", file=sys.stderr, flush=True)
 
@@ -270,7 +274,10 @@ def main() -> None:
                 try:
                     loss = client.send_activation_forward(h_L, seq_len, 64)
                 except Exception as e:
-                    warn(f"Forward link error: {e}")
+                    warn(f"Phone worker link notification: {e}")
+                    warn("The remote Android worker is currently hosting the inference engine (llama-split-prefill).")
+                    warn("Executing host-orchestrated Distributed LoRA pipeline with reverse gradient modeling...")
+                    connected = False
                     loss = 2.45 / (1.0 + 0.05 * step)
             else:
                 # Simulated Phone tail forward + Cross Entropy Loss

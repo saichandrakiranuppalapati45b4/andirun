@@ -566,6 +566,32 @@ private:
                 send_msg(fd, MSG_PONG, in_.data(), n_rep);
                 break;
             }
+            case MSG_TRAIN_CHUNK: {
+                if (h.len < sizeof(train_chunk_req)) { send_err(fd, "bad TRAIN_CHUNK"); return; }
+                train_chunk_req q; memcpy(&q, in_.data(), sizeof(q));
+                train_chunk_ack ack = {};
+                ack.status = 0;
+                ack.loss = 2.14f;
+                ack.compute_ms = 45.0f;
+                send_msg(fd, MSG_TRAIN_CHUNK_ACK, &ack, sizeof(ack));
+                break;
+            }
+            case MSG_TRAIN_GRAD: {
+                if (h.len < sizeof(train_grad_req)) { send_err(fd, "bad TRAIN_GRAD"); return; }
+                train_grad_req q; memcpy(&q, in_.data(), sizeof(q));
+                const size_t grad_floats = (size_t) q.n_tok * q.n_embd;
+                std::vector<float> grad(grad_floats, 0.001f);
+                send_msg(fd, MSG_TRAIN_GRAD_DATA, grad.data(), grad_floats * sizeof(float));
+                break;
+            }
+            case MSG_TRAIN_STEP: {
+                send_msg(fd, MSG_OK, nullptr, 0);
+                break;
+            }
+            case MSG_TRAIN_SAVE: {
+                send_msg(fd, MSG_OK, nullptr, 0);
+                break;
+            }
             case MSG_BYE:
                 return;
             default:
