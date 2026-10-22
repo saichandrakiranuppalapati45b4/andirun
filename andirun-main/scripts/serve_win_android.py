@@ -163,8 +163,8 @@ def start_worker_on_phone(serial: str | None, tail_model_remote: str, port: int 
         if "OK" in sd_check:
             log("Staging worker binary and libraries from /sdcard/Download/ to /data/local/tmp/...")
             subprocess.call(cmd_base + ["shell", "cp /sdcard/Download/llama-split-prefill /data/local/tmp/ 2>/dev/null"])
-            subprocess.call(cmd_base + ["shell", "cp /sdcard/Download/*.so /data/local/tmp/ 2>/dev/null"])
-            subprocess.call(cmd_base + ["shell", "chmod 755 /data/local/tmp/llama-split-prefill /data/local/tmp/*.so 2>/dev/null"])
+            subprocess.call(cmd_base + ["shell", "cp /sdcard/Download/*.so* /data/local/tmp/ 2>/dev/null"])
+            subprocess.call(cmd_base + ["shell", "chmod 755 /data/local/tmp/llama-split-prefill /data/local/tmp/*.so* 2>/dev/null"])
             log(f"Launching Android daemon: {remote_bin} --serve-tail {port} --tail-model {tail_model_remote}")
             launch_cmd = cmd_base + [
                 "shell",

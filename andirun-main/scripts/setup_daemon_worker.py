@@ -95,14 +95,14 @@ def main() -> None:
             print("\n" + "=" * 60)
             print("\033[33m[ACTION NEEDED IN TERMUX]\033[0m")
             print("Please run this command in Termux ONCE to stage the binary and libraries:")
-            print("\n    \033[1mcd ~/andirun/andirun-main/llama.cpp && cp build/bin/llama-split-prefill build/bin/*.so $PREFIX/lib/libc++_shared.so ~/storage/downloads/ 2>/dev/null\033[0m\n")
+            print("\n    \033[1mcd ~/andirun/andirun-main/llama.cpp && cp build/bin/llama-split-prefill build/bin/*.so* $PREFIX/lib/libc++_shared.so ~/storage/downloads/ 2>/dev/null\033[0m\n")
             print("=" * 60)
             input("Press Enter after running the command in Termux...")
 
         log("Installing to /data/local/tmp/llama-split-prefill via ADB...")
         subprocess.call([adb, "-s", device, "shell", "cp /sdcard/Download/llama-split-prefill /data/local/tmp/llama-split-prefill 2>/dev/null"])
-        subprocess.call([adb, "-s", device, "shell", "cp /sdcard/Download/*.so /data/local/tmp/ 2>/dev/null"])
-        subprocess.call([adb, "-s", device, "shell", "chmod 755 /data/local/tmp/llama-split-prefill /data/local/tmp/*.so 2>/dev/null"])
+        subprocess.call([adb, "-s", device, "shell", "cp /sdcard/Download/*.so* /data/local/tmp/ 2>/dev/null"])
+        subprocess.call([adb, "-s", device, "shell", "chmod 755 /data/local/tmp/llama-split-prefill /data/local/tmp/*.so* 2>/dev/null"])
 
     # Verify installation
     check = subprocess.call([adb, "-s", device, "shell", "test -s /data/local/tmp/llama-split-prefill"])
