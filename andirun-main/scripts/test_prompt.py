@@ -10,7 +10,19 @@ def main():
     parser.add_argument("--prompt", default="Explain how AndiRun splits LLM inference across Windows and Android.", help="Prompt text")
     args = parser.parse_args()
 
-    url = f"http://127.0.0.1:{args.port}/v1/chat/completions"
+    # Auto-detect which port llama-server is listening on
+    candidate_ports = [args.port] + [p for p in [8002, 8001, 8000] if p != args.port]
+    target_port = args.port
+    for p in candidate_ports:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{p}/health", timeout=1.0) as r:
+                if r.status == 200:
+                    target_port = p
+                    break
+        except Exception:
+            pass
+
+    url = f"http://127.0.0.1:{target_port}/v1/chat/completions"
     payload = {
         "messages": [
             {"role": "user", "content": args.prompt}
@@ -38,8 +50,13 @@ def main():
             if "usage" in data:
                 u = data["usage"]
                 print(f"Tokens: Prompt {u.get('prompt_tokens', 0)}, Completion {u.get('completion_tokens', 0)}, Total {u.get('total_tokens', 0)}")
+    except urllib.error.URLError as e:
+        print(f"[Error] Could not connect to llama-server on port {target_port}: {e.reason}")
+        print("\nEnsure the host server is running in Window 1 with:")
+        print("  python andirun-main\\scripts\\serve_win_android.py -m qwen-7b.gguf -L 20 --tail-port 8080 --port 8001 --server-bin build-win\\bin\\llama-server.exe --extra-args \"--lora andirun-lora.gguf\"")
+        sys.exit(1)
     except Exception as e:
-        print(f"[Error] Failed to connect: {e}")
+        print(f"[Error] Query failed: {e}")
         sys.exit(1)
 
 
