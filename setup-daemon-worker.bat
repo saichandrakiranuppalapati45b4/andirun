@@ -41,28 +41,37 @@ if %errorlevel% equ 0 (
     goto :start_daemon
 )
 
-echo [*] Worker binary not yet in /data/local/tmp/.
-echo [*] Checking if Termux can copy it to /data/local/tmp/...
-"%ADB%" -s %DEVICE% shell "su -c 'cp /data/data/com.termux/files/home/andirun/andirun-main/llama.cpp/build/bin/llama-split-prefill /data/local/tmp/' 2>/dev/null"
-"%ADB%" -s %DEVICE% shell "chmod 755 /data/local/tmp/llama-split-prefill 2>/dev/null"
+echo [*] Checking for staged binary in /sdcard/Download/...
+"%ADB%" -s %DEVICE% shell "test -f /sdcard/Download/llama-split-prefill && echo FOUND" > "%TEMP%\andirun_sd_check.txt" 2>&1
+findstr "FOUND" "%TEMP%\andirun_sd_check.txt" >nul 2>&1
+del "%TEMP%\andirun_sd_check.txt" >nul 2>&1
+
+if %errorlevel% neq 0 (
+    echo.
+    echo [!] Notice: Android SELinux requires copying via shared storage (/sdcard/Download).
+    echo [*] In Termux, run this command ONE time:
+    echo.
+    echo     cp bin/llama-split-prefill /sdcard/Download/ ^|^| cp build/bin/llama-split-prefill /sdcard/Download/
+    echo.
+    echo [*] (If Termux asks for storage permission, tap Allow).
+    echo [*] Press any key after running the command in Termux...
+    pause >nul
+)
+
+echo [*] Installing to /data/local/tmp/llama-split-prefill via ADB...
+"%ADB%" -s %DEVICE% shell "cp /sdcard/Download/llama-split-prefill /data/local/tmp/llama-split-prefill && chmod 755 /data/local/tmp/llama-split-prefill"
 
 "%ADB%" -s %DEVICE% shell "test -x /data/local/tmp/llama-split-prefill && echo FOUND" > "%TEMP%\andirun_bin_check.txt" 2>&1
 findstr "FOUND" "%TEMP%\andirun_bin_check.txt" >nul 2>&1
 del "%TEMP%\andirun_bin_check.txt" >nul 2>&1
 
 if %errorlevel% equ 0 (
-    echo [✓] Successfully staged worker binary to /data/local/tmp/!
+    echo [✓] Successfully installed worker binary to /data/local/tmp/!
     goto :start_daemon
 )
 
-echo [!] Notice: The binary is inside Termux's private storage.
-echo [*] Please run this one-line command inside Termux on your phone ONCE:
-echo.
-echo     cp ~/andirun/andirun-main/llama.cpp/build/bin/llama-split-prefill /data/local/tmp/ && chmod 755 /data/local/tmp/llama-split-prefill
-echo.
-echo [*] Once copied, you never have to open Termux again!
-echo [*] Press any key after running the command in Termux...
-pause >nul
+echo [-] Error: Failed to install worker binary. Please check file copy in Termux.
+exit /b 1
 
 :start_daemon
 echo [*] Launching background daemon on port 8080...

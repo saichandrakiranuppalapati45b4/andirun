@@ -27,22 +27,29 @@ $binCheck = & $adb -s $device shell "test -x /data/local/tmp/llama-split-prefill
 if ($binCheck -match "FOUND") {
     Write-Host "[✓] /data/local/tmp/llama-split-prefill already installed and executable!" -ForegroundColor Green
 } else {
-    Write-Host "[*] Checking if Termux can copy the binary to /data/local/tmp/..."
-    & $adb -s $device shell "su -c 'cp /data/data/com.termux/files/home/andirun/andirun-main/llama.cpp/build/bin/llama-split-prefill /data/local/tmp/' 2>/dev/null"
-    & $adb -s $device shell "chmod 755 /data/local/tmp/llama-split-prefill 2>/dev/null"
+    Write-Host "[*] Checking for staged binary in /sdcard/Download/..."
+    $sdCheck = & $adb -s $device shell "test -f /sdcard/Download/llama-split-prefill && echo FOUND"
+    
+    if ($sdCheck -notmatch "FOUND") {
+        Write-Host ""
+        Write-Host "[!] Notice: Android SELinux requires copying via shared storage (/sdcard/Download)." -ForegroundColor Yellow
+        Write-Host "[*] In Termux, run this command ONE time:" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "    cp bin/llama-split-prefill /sdcard/Download/ || cp build/bin/llama-split-prefill /sdcard/Download/" -ForegroundColor White -BackgroundColor Black
+        Write-Host ""
+        Write-Host "[*] (If Termux asks for storage permission, tap Allow)."
+        Read-Host "Press Enter after copying in Termux..."
+    }
+
+    Write-Host "[*] Installing to /data/local/tmp/llama-split-prefill via ADB..."
+    & $adb -s $device shell "cp /sdcard/Download/llama-split-prefill /data/local/tmp/llama-split-prefill && chmod 755 /data/local/tmp/llama-split-prefill"
     
     $binCheck2 = & $adb -s $device shell "test -x /data/local/tmp/llama-split-prefill && echo FOUND"
     if ($binCheck2 -match "FOUND") {
-        Write-Host "[✓] Successfully staged worker binary to /data/local/tmp/!" -ForegroundColor Green
+        Write-Host "[✓] Successfully installed worker to /data/local/tmp/!" -ForegroundColor Green
     } else {
-        Write-Host ""
-        Write-Host "[!] Notice: The binary is currently inside Termux's private storage." -ForegroundColor Yellow
-        Write-Host "[*] Please run this one-line command inside Termux on your phone ONCE:" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "    cp ~/andirun/andirun-main/llama.cpp/build/bin/llama-split-prefill /data/local/tmp/ && chmod 755 /data/local/tmp/llama-split-prefill" -ForegroundColor White -BackgroundColor Black
-        Write-Host ""
-        Write-Host "[*] Once copied, you NEVER have to open Termux again!"
-        Read-Host "Press Enter after running the command in Termux..."
+        Write-Host "[-] Could not install binary. Please ensure it was copied to /sdcard/Download/." -ForegroundColor Red
+        exit 1
     }
 }
 
