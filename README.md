@@ -121,17 +121,26 @@ python andirun-main/scripts/split-gguf.py -m qwen-7b.gguf -L 20 -o tail-L20.gguf
 adb push tail-L20.gguf /data/local/tmp/
 ```
 
-### 3. Build & Run the Android Worker
+### 3. Setup Android Worker (No Termux Needed!)
 
-In **Termux** on your Android device:
+You can run the phone worker in either of two ways:
+
+#### Option A: Zero-Touch Background Daemon (Recommended)
+Run from Windows PowerShell to automatically configure the background worker daemon on your phone:
+```powershell
+.\setup-daemon-worker.bat
+```
+*(This automatically stages the worker to `/data/local/tmp/` and starts the daemon on port 8080. It stays active in the background without needing Termux).*
+
+#### Option B: Native Android App (`andirun-android`)
+Build and install the dedicated AndiRun Android GUI app with Foreground Service:
+```powershell
+.\build-android-app.bat
+```
+*(Or open `andirun-android/` directly in Android Studio and click Run).*
+
+#### Option C: Manual Termux (Optional)
 ```bash
-pkg install -y git cmake clang make
-git clone https://github.com/saichandrakiranuppalapati45b4/andirun.git
-cd andirun/andirun-main/llama.cpp
-cmake -B build -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF
-cmake --build build --target llama-split-prefill -j4
-
-# Start the worker
 ./build/bin/llama-split-prefill --serve-tail 8080 --tail-model /data/local/tmp/tail-L20.gguf
 ```
 

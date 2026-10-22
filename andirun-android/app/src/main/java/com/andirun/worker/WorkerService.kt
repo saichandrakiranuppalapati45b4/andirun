@@ -43,10 +43,10 @@ class WorkerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val modelPath = intent?.getStringExtra("MODEL_PATH") ?: "/data/local/tmp/tail-L40.gguf"
-        val port = intent?.getIntExtra("PORT", 50060) ?: 50060
+        val modelPath = intent?.getStringExtra("MODEL_PATH") ?: "/data/local/tmp/tail-L20.gguf"
+        val port = intent?.getIntExtra("PORT", 8080) ?: 8080
 
-        val notification = buildNotification("Backburner Tail Worker listening on :$port")
+        val notification = buildNotification("AndiRun Tail Worker listening on :$port")
         startForeground(NOTIFICATION_ID, notification)
 
         if (!isRunning) {

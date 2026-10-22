@@ -3,10 +3,11 @@ project("andirun_native")
 
 set(CMAKE_CXX_STANDARD 17)
 
-# Path to backburner llama.cpp
-set(LLAMA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../backburner/llama.cpp")
+# Path to AndiRun llama.cpp
+set(LLAMA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../andirun-main/llama.cpp")
 
 include_directories(
+    ${LLAMA_ROOT}
     ${LLAMA_ROOT}/include
     ${LLAMA_ROOT}/ggml/include
     ${LLAMA_ROOT}/tools/split-prefill

@@ -30,14 +30,14 @@ class MainActivity : Activity() {
         layout.addView(title)
 
         val portInput = EditText(this).apply {
-            hint = "Worker Port (default: 50060)"
-            setText("50060")
+            hint = "Worker Port (default: 8080)"
+            setText("8080")
         }
         layout.addView(portInput)
 
         val modelInput = EditText(this).apply {
             hint = "Tail GGUF Path"
-            setText("/data/local/tmp/tail-L40.gguf")
+            setText("/data/local/tmp/tail-L20.gguf")
         }
         layout.addView(modelInput)
 
@@ -54,7 +54,7 @@ class MainActivity : Activity() {
         toggleButton.setOnClickListener {
             if (!isServiceRunning) {
                 val intent = Intent(this, WorkerService::class.java).apply {
-                    putExtra("PORT", portInput.text.toString().toIntOrNull() ?: 50060)
+                    putExtra("PORT", portInput.text.toString().toIntOrNull() ?: 8080)
                     putExtra("MODEL_PATH", modelInput.text.toString())
                 }
                 startForegroundService(intent)

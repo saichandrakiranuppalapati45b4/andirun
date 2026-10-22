@@ -118,27 +118,60 @@ def probe_patn_worker(host: str = "127.0.0.1", port: int = DEFAULT_ATTN_PORT, ti
         return None
 
 def start_worker_on_phone(serial: str | None, tail_model_remote: str, port: int = DEFAULT_TAIL_PORT) -> bool:
-    """Attempts to launch the native llama-split-prefill worker on the Android phone via adb shell."""
+    """Attempts to launch the worker on the Android phone via app service or adb daemon."""
     cmd_base = [get_adb_binary()]
     if serial:
         cmd_base += ["-s", serial]
 
-    remote_bin = "/data/local/tmp/llama-split-prefill"
-    check_bin = cmd_base + ["shell", f"test -x {remote_bin} && echo OK"]
+    # Strategy 1: Launch via installed AndiRun Android App Foreground Service
     try:
-        res = subprocess.check_output(check_bin, text=True).strip()
-        if "OK" not in res:
-            error(f"{remote_bin} not found or not executable on the Android device.")
-            log(f"Push it with: adb push build-worker-android/bin/llama-split-prefill {remote_bin}")
-            return False
-    except subprocess.CalledProcessError:
-        return False
+        app_check = subprocess.check_output(cmd_base + ["shell", "pm path com.andirun.worker"], text=True).strip()
+        if "package:" in app_check:
+            log("Detected AndiRun Android App (com.andirun.worker)! Starting Foreground WorkerService...")
+            start_cmd = cmd_base + [
+                "shell", "am", "start-foreground-service",
+                "-n", "com.andirun.worker/.WorkerService",
+                "--ei", "PORT", str(port),
+                "--es", "MODEL_PATH", tail_model_remote
+            ]
+            subprocess.call(start_cmd)
+            time.sleep(2)
+            return True
+    except Exception:
+        pass
 
-    log(f"Launching remote worker: {remote_bin} --serve-tail {port} --tail-model {tail_model_remote}")
-    launch_cmd = cmd_base + ["shell", f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"]
-    subprocess.call(launch_cmd)
-    time.sleep(2)
-    return True
+    # Strategy 2: Check for executable in /data/local/tmp/
+    remote_bin = "/data/local/tmp/llama-split-prefill"
+    try:
+        res = subprocess.check_output(cmd_base + ["shell", f"test -x {remote_bin} && echo OK"], text=True).strip()
+        if "OK" in res:
+            log(f"Launching Android daemon: {remote_bin} --serve-tail {port} --tail-model {tail_model_remote}")
+            launch_cmd = cmd_base + ["shell", f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"]
+            subprocess.call(launch_cmd)
+            time.sleep(2)
+            return True
+    except subprocess.CalledProcessError:
+        pass
+
+    # Strategy 3: Check Termux installation path on device
+    try:
+        check_termux = cmd_base + ["shell", "find /data/data/com.termux/files/home -name 'llama-split-prefill' 2>/dev/null"]
+        t_out = subprocess.check_output(check_termux, text=True).strip()
+        if t_out:
+            t_bin = t_out.splitlines()[0]
+            log(f"Found Termux binary at {t_bin}. Staging to /data/local/tmp/llama-split-prefill...")
+            subprocess.call(cmd_base + ["shell", f"cp '{t_bin}' {remote_bin} && chmod 755 {remote_bin}"])
+            launch_cmd = cmd_base + ["shell", f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"]
+            subprocess.call(launch_cmd)
+            time.sleep(2)
+            return True
+    except Exception:
+        pass
+
+    error(f"Neither AndiRun App nor {remote_bin} is active or installed.")
+    log("Install the Android App with: cd andirun-android && .\\gradlew installDebug")
+    log("Or copy your worker binary: adb push llama-split-prefill /data/local/tmp/")
+    return False
 
 def main():
     parser = argparse.ArgumentParser(description="Backburner Host Orchestrator for Windows PC + Android Phones")
