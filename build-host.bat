@@ -30,7 +30,7 @@ rem Do not clean build-win every time to allow fast incremental Ninja builds
 rem if exist "build-win" rmdir /s /q "build-win"
 
 echo [*] Running CMake configuration with Ninja and MSVC cl.exe...
-cmake -S backburner\llama.cpp -B build-win -G Ninja ^
+cmake -S andirun-main\llama.cpp -B build-win -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
   -DCMAKE_C_COMPILER=cl ^
   -DCMAKE_CXX_COMPILER=cl ^

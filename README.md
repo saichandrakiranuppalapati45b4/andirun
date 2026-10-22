@@ -3,7 +3,7 @@
 
 [![Platform Windows](https://img.shields.io/badge/Host-Windows%2011%20x64-blue.svg)](https://microsoft.com)
 [![Platform Android](https://img.shields.io/badge/Co--Processor-Android%20arm64--v8a-green.svg)](https://android.com)
-[![Protocol](https://img.shields.io/badge/Protocol-SPTL%20v2%20(USB)-orange.svg)](file:///mnt/c/projects/andirun/backburner/llama.cpp/tools/split-prefill/spt-socket.h)
+[![Protocol](https://img.shields.io/badge/Protocol-SPTL%20v2%20(USB)-orange.svg)](file:///mnt/c/projects/andirun/andirun-main/llama.cpp/tools/split-prefill/spt-socket.h)
 [![Engine](https://img.shields.io/badge/Engine-llama.cpp%20MSVC%20%2B%20Ninja-purple.svg)](https://github.com/ggml-org/llama.cpp)
 [![API](https://img.shields.io/badge/API-OpenAI%20Compatible-red.svg)](http://127.0.0.1:8000/v1)
 
@@ -86,7 +86,7 @@ andirun/
 │   │   ├── AndroidManifest.xml # Foreground Service declarations
 │   │   ├── java/              # WorkerService & UI
 │   │   └── cpp/               # JNI bridge to llama-split-prefill
-├── backburner/
+├── andirun-main/
 │   ├── llama.cpp/             # Forked llama.cpp engine with split-prefill support
 │   │   ├── src/llama-split.cpp
 │   │   └── tools/split-prefill/
@@ -111,7 +111,7 @@ andirun/
 Download any standard single-file GGUF (e.g. `qwen-7b.gguf`) and slice it into host and tail components:
 
 ```bash
-python backburner/scripts/split-gguf.py -m qwen-7b.gguf -L 20 -o tail-L20.gguf
+python andirun-main/scripts/split-gguf.py -m qwen-7b.gguf -L 20 -o tail-L20.gguf
 ```
 *(Do not pass `--no-head`, so embedding tensors remain preserved for worker loading).*
 
@@ -127,7 +127,7 @@ In **Termux** on your Android device:
 ```bash
 pkg install -y git cmake clang make
 git clone https://github.com/saichandrakiranuppalapati45b4/andirun.git
-cd andirun/backburner/llama.cpp
+cd andirun/andirun-main/llama.cpp
 cmake -B build -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF
 cmake --build build --target llama-split-prefill -j4
 
@@ -147,7 +147,7 @@ In a Windows PowerShell terminal (as Administrator):
 
 Run the AndiRun orchestrator from PowerShell:
 ```powershell
-python backburner\scripts\serve_win_android.py -m qwen-7b.gguf -L 20 --tail-port 8080 --port 8000 --server-bin build-win\bin\llama-server.exe
+python andirun-main\scripts\serve_win_android.py -m qwen-7b.gguf -L 20 --tail-port 8080 --port 8000 --server-bin build-win\bin\llama-server.exe
 ```
 
 The script will:

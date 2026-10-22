@@ -32,6 +32,9 @@ platform-tools/*.exe
 platform-tools/*.dll
 platform-tools/*.lib
 
+# REA Analysis Folder
+rea/
+
 # Android Studio / Gradle
 .gradle/
 **/build/
