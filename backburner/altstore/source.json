@@ -1,0 +1,72 @@
+{
+  "name": "Backburner",
+  "subtitle": "Your iPhone helps your Mac run a 27B model",
+  "description": "The Backburner iPhone app: plug the phone into your Mac with a 10 Gb/s USB-C cable and it runs part of Qwen3.8-27B (faster prompt reading) and holds context the Mac has no room for. You also need the Mac side: https://github.com/StayLameBro/backburner",
+  "iconURL": "https://raw.githubusercontent.com/StayLameBro/backburner/main/docs/img/icon.png",
+  "website": "https://github.com/StayLameBro/backburner",
+  "tintColor": "#E8673A",
+  "nsfw": false,
+  "featuredApps": [
+    "app.backburner.sidecar"
+  ],
+  "apps": [
+    {
+      "name": "Backburner",
+      "bundleIdentifier": "app.backburner.sidecar",
+      "developerName": "StayLameBro",
+      "subtitle": "Your iPhone as a second GPU for your Mac",
+      "localizedDescription": "Plug the phone into your Mac with a 10 Gb/s USB-C cable, open Backburner and keep it in front. The Mac's server (scripts/serve.sh) then sends the phone layers 41-64 of each prompt batch and, past 64k tokens, the oldest part of the context.\n\nNeeds an iPhone 15 Pro or newer (the 17 Pro gets the most from it) or an M-series iPad (untested so far) and the Mac side from github.com/StayLameBro/backburner. Very early: please post your results in the repo.",
+      "iconURL": "https://raw.githubusercontent.com/StayLameBro/backburner/main/docs/img/icon.png",
+      "tintColor": "#E8673A",
+      "category": "developer",
+      "screenshots": [],
+      "versions": [
+        {
+          "version": "0.0.4",
+          "buildVersion": "4",
+          "date": "2026-10-03T19:04:25Z",
+          "localizedDescription": "The phone and the Mac now speak the same protocol version, so saving a session while the phone holds part of the conversation works. Keep the app in front past 64k (Guided Access helps: see the install guide).",
+          "downloadURL": "https://github.com/StayLameBro/backburner/releases/download/v0.0.4/Backburner.ipa",
+          "size": 2747105,
+          "minOSVersion": "16.4"
+        },
+        {
+          "version": "0.0.3",
+          "buildVersion": "3",
+          "date": "2026-10-03T15:40:15Z",
+          "localizedDescription": "Security fix, please update. Over the USB cable the app now answers only the Mac on the other end, and it no longer announces itself on the network. Wi-Fi stays off unless you pair the phone over the cable (scripts/phone-wifi.sh); then it is encrypted and needs that key.",
+          "downloadURL": "https://github.com/StayLameBro/backburner/releases/download/v0.0.3/Backburner.ipa",
+          "size": 2744534,
+          "minOSVersion": "16.4"
+        },
+        {
+          "version": "0.0.2",
+          "buildVersion": "2",
+          "date": "2026-10-03T02:43:24Z",
+          "localizedDescription": "Installs on iPads too (M-series; untested, please post results). The app's text says iPad on an iPad, and it runs full screen there.",
+          "downloadURL": "https://github.com/StayLameBro/backburner/releases/download/v0.0.2/Backburner.ipa",
+          "size": 2727191,
+          "minOSVersion": "16.4"
+        },
+        {
+          "version": "0.0.1",
+          "buildVersion": "1",
+          "date": "2026-10-03T01:44:29Z",
+          "localizedDescription": "First public build. Very early.",
+          "downloadURL": "https://github.com/StayLameBro/backburner/releases/download/v0.0.1/Backburner.ipa",
+          "size": 2725818,
+          "minOSVersion": "16.4"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.developer.kernel.increased-memory-limit"
+        ],
+        "privacy": {
+          "NSLocalNetworkUsageDescription": "Backburner lets the Mac find this phone on the USB cable."
+        }
+      }
+    }
+  ],
+  "news": []
+}

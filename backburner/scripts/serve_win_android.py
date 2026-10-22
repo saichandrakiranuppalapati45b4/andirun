@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""serve_win_android.py - Orchestrator for Backburner on Windows PC + Android Phones.
+
+Connects Windows host (llama-server / llama-split) to an Android phone running
+Backburner's tail worker (Vulkan/OpenCL) via high-speed USB-C (ADB or USB tethering).
+"""
+
+import argparse
+import os
+import socket
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SPTL_MAGIC = 0x4C545053  # "SPTL"
+PATN_MAGIC = 0x4E544150  # "PATN"
+DEFAULT_TAIL_PORT = 50060
+DEFAULT_ATTN_PORT = 50062
+
+def log(msg: str):
+    print(f"[\033[36mAndiRun\033[0m] {msg}", flush=True)
+
+def error(msg: str):
+    print(f"[\033[31mERROR\033[0m] {msg}", file=sys.stderr, flush=True)
+
+def get_adb_binary() -> str:
+    """Finds adb binary in PATH or local platform-tools directory."""
+    local_adb_win = Path(__file__).resolve().parent.parent.parent / "platform-tools" / "adb.exe"
+    local_adb_posix = Path(__file__).resolve().parent.parent.parent / "platform-tools" / "adb"
+    if local_adb_win.exists():
+        return str(local_adb_win)
+    if local_adb_posix.exists():
+        return str(local_adb_posix)
+    return "adb"
+
+def check_adb_devices() -> list[str]:
+    """Finds all connected Android devices via ADB."""
+    adb_bin = get_adb_binary()
+    try:
+        out = subprocess.check_output([adb_bin, "devices"], text=True)
+    except FileNotFoundError:
+        error(f"`{adb_bin}` not found. Ensure Android platform-tools is installed.")
+        return []
+    except subprocess.CalledProcessError as e:
+        error(f"adb devices failed: {e}")
+        return []
+
+    devices = []
+    for line in out.strip().splitlines()[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            devices.append(parts[0])
+    return devices
+
+def setup_adb_forwarding(serial: str | None = None, tail_port: int = DEFAULT_TAIL_PORT, attn_port: int = DEFAULT_ATTN_PORT) -> bool:
+    """Configures local TCP forward tunnels through ADB to the phone's loopback listeners."""
+    cmd_base = [get_adb_binary()]
+    if serial:
+        cmd_base += ["-s", serial]
+
+    try:
+        subprocess.check_call(cmd_base + ["forward", f"tcp:{tail_port}", f"tcp:{tail_port}"])
+        subprocess.check_call(cmd_base + ["forward", f"tcp:{attn_port}", f"tcp:{attn_port}"])
+        log(f"ADB port forwarding established: 127.0.0.1:{tail_port} and :{attn_port} -> Android")
+        return True
+    except subprocess.CalledProcessError as e:
+        error(f"Failed to forward ports via ADB: {e}")
+        return False
+
+def probe_sptl_worker(host: str = "127.0.0.1", port: int = DEFAULT_TAIL_PORT, timeout: float = 3.0) -> dict | None:
+    """Probes the tail worker using the SPTL protocol PING (type 11)."""
+    try:
+        t0 = time.perf_counter()
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            # MSG_PING = 11: payload: u32 reply_len (e.g. 4 bytes)
+            payload = struct.pack("<I", 4)
+            hdr = struct.pack("<IIQ", SPTL_MAGIC, 11, len(payload))
+            s.sendall(hdr + payload)
+            
+            # Read header
+            rep_hdr = s.recv(16)
+            if len(rep_hdr) < 16:
+                return None
+            magic, mtype, plen = struct.unpack("<IIQ", rep_hdr)
+            if magic != SPTL_MAGIC or mtype != 12:  # MSG_PONG = 12
+                return None
+            
+            body = s.recv(plen) if plen else b""
+            rtt_ms = (time.perf_counter() - t0) * 1000.0
+            return {"magic": magic, "type": mtype, "len": plen, "rtt_ms": rtt_ms}
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return None
+
+def probe_patn_worker(host: str = "127.0.0.1", port: int = DEFAULT_ATTN_PORT, timeout: float = 2.0) -> int | None:
+    """Probes the phone-attention worker using the PATN protocol HELLO."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            # HELLO (1), len 0
+            hdr = struct.pack("<IIQ", PATN_MAGIC, 1, 0)
+            s.sendall(hdr)
+            rep_hdr = s.recv(16)
+            if len(rep_hdr) < 16:
+                return None
+            magic, mtype, plen = struct.unpack("<IIQ", rep_hdr)
+            if magic != PATN_MAGIC or mtype != 2:  # HELLO_OK = 2
+                return None
+            rep_body = s.recv(plen)
+            if len(rep_body) >= 4:
+                version = struct.unpack("<I", rep_body[:4])[0]
+                return version
+            return 1
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return None
+
+def start_worker_on_phone(serial: str | None, tail_model_remote: str, port: int = DEFAULT_TAIL_PORT) -> bool:
+    """Attempts to launch the native llama-split-prefill worker on the Android phone via adb shell."""
+    cmd_base = [get_adb_binary()]
+    if serial:
+        cmd_base += ["-s", serial]
+
+    remote_bin = "/data/local/tmp/llama-split-prefill"
+    check_bin = cmd_base + ["shell", f"test -x {remote_bin} && echo OK"]
+    try:
+        res = subprocess.check_output(check_bin, text=True).strip()
+        if "OK" not in res:
+            error(f"{remote_bin} not found or not executable on the Android device.")
+            log(f"Push it with: adb push build-worker-android/bin/llama-split-prefill {remote_bin}")
+            return False
+    except subprocess.CalledProcessError:
+        return False
+
+    log(f"Launching remote worker: {remote_bin} --serve-tail {port} --tail-model {tail_model_remote}")
+    launch_cmd = cmd_base + ["shell", f"nohup {remote_bin} --serve-tail {port} --tail-model {tail_model_remote} > /data/local/tmp/worker.log 2>&1 &"]
+    subprocess.call(launch_cmd)
+    time.sleep(2)
+    return True
+
+def main():
+    parser = argparse.ArgumentParser(description="Backburner Host Orchestrator for Windows PC + Android Phones")
+    parser.add_argument("-m", "--model", required=True, help="Path to the full GGUF model on the host PC")
+    parser.add_argument("-L", "--split-layer", type=int, default=40, help="First layer offloaded to the Android worker (default: 40)")
+    parser.add_argument("--tail-model", help="Path to the tail GGUF model on host or phone")
+    parser.add_argument("--device", help="Specific Android device serial (from adb devices)")
+    parser.add_argument("--min-tokens", type=int, default=512, help="Minimum prompt tokens before splitting (default: 512)")
+    parser.add_argument("--port", type=int, default=8080, help="Local host API port (default: 8080)")
+    parser.add_argument("--tail-port", type=int, default=DEFAULT_TAIL_PORT, help=f"Tail worker port (default: {DEFAULT_TAIL_PORT})")
+    parser.add_argument("--server-bin", default="llama-server", help="Path or name of host llama-server executable")
+    parser.add_argument("--extra-args", default="", help="Additional arguments forwarded to llama-server")
+
+    args = parser.parse_args()
+
+    log("Scanning for Android phones via ADB...")
+    devices = check_adb_devices()
+    if not devices:
+        error("No Android phone detected. Please connect phone via USB-C and enable USB Debugging.")
+        sys.exit(1)
+
+    target_device = args.device or devices[0]
+    log(f"Selected Android Phone: {target_device} (total connected: {len(devices)})")
+
+    log("Configuring USB port forwarding...")
+    if not setup_adb_forwarding(target_device, tail_port=args.tail_port):
+        sys.exit(1)
+
+    # Check if worker is answering
+    log(f"Probing Android Split-Prefill Worker (SPTL :{args.tail_port})...")
+    sptl_status = probe_sptl_worker("127.0.0.1", args.tail_port)
+    if not sptl_status:
+        log("Tail worker not currently answering on Android.")
+        remote_tail_path = f"/data/local/tmp/tail-L{args.split_layer}.gguf"
+        log(f"Attempting to launch worker daemon on phone with {remote_tail_path}...")
+        start_worker_on_phone(target_device, remote_tail_path, args.tail_port)
+        
+        # Retry probe
+        for _ in range(10):
+            time.sleep(1)
+            sptl_status = probe_sptl_worker("127.0.0.1", args.tail_port)
+            if sptl_status:
+                break
+
+    if sptl_status:
+        log("\033[32m[✓] Android Split-Prefill Worker is READY!\033[0m")
+    else:
+        error("Could not establish connection with Android worker. Please ensure `llama-split-prefill` or the Android app is running.")
+        sys.exit(1)
+
+    # Check Phone Attn worker (:50062)
+    patn_ver = probe_patn_worker("127.0.0.1", DEFAULT_ATTN_PORT)
+    if patn_ver:
+        log(f"\033[32m[✓] Phone Attention Worker is READY (protocol v{patn_ver})\033[0m")
+    else:
+        log("Phone Attention (:50062) inactive (Remote KV off; standard split prefill active).")
+
+    # Set Environment Variables for host llama.cpp
+    env = os.environ.copy()
+    env["LLAMA_SPLIT_TAIL"] = f"127.0.0.1:{args.tail_port}"
+    env["LLAMA_SPLIT_L"] = str(args.split_layer)
+    env["LLAMA_SPLIT_MIN"] = str(args.min_tokens)
+    env["LLAMA_SPLIT_VERBOSE"] = "1"
+
+    server_exe = os.path.abspath(args.server_bin)
+    cmd = [
+        server_exe,
+        "-m", os.path.abspath(args.model),
+        "-c", "32768",
+        "-ngl", "999",
+        "--port", str(args.port),
+        "--host", "127.0.0.1"
+    ]
+    if args.extra_args:
+        cmd.extend(args.extra_args.split())
+
+    log(f"Launching Host Server with Android Co-Processor (Split L={args.split_layer})...")
+    log(f"Command: {' '.join(cmd)}")
+    log(f"API will be available at: http://127.0.0.1:{args.port}/v1")
+
+    try:
+        subprocess.run(cmd, env=env)
+    except KeyboardInterrupt:
+        log("Shutting down Backburner host.")
+
+if __name__ == "__main__":
+    main()

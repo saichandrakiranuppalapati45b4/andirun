@@ -1,0 +1,48 @@
+# Large Model Weights (DO NOT COMMIT)
+*.gguf
+*.bin
+*.pt
+*.safetensors
+
+# Build Output Directories
+build-win/
+build/
+bin/
+obj/
+out/
+CMakeFiles/
+CMakeCache.txt
+*.dir/
+
+# Compiled Binaries & Libraries
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.o
+*.a
+*.so
+*.dylib
+
+# Windows Platform Tools Binaries
+platform-tools/*.exe
+platform-tools/*.dll
+platform-tools/*.lib
+
+# Android Studio / Gradle
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+.cxx/
+
+# Temporary / OS Files
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*.log
