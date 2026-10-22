@@ -248,6 +248,18 @@ def main():
     else:
         log("Phone Attention (:50062) inactive (Remote KV off; standard split prefill active).")
 
+    # Check if host port is already bound, fallback if occupied
+    host_port = args.port
+    for offset in range(10):
+        test_port = args.port + offset
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(("127.0.0.1", test_port)) != 0:
+                host_port = test_port
+                break
+    if host_port != args.port:
+        log(f"\033[33m[!] Port {args.port} is already in use by another app. Automatically switching to port {host_port}.\033[0m")
+
     # Set Environment Variables for host llama.cpp
     env = os.environ.copy()
     env["LLAMA_SPLIT_TAIL"] = f"127.0.0.1:{args.tail_port}"
@@ -261,7 +273,7 @@ def main():
         "-m", os.path.abspath(args.model),
         "-c", "32768",
         "-ngl", "999",
-        "--port", str(args.port),
+        "--port", str(host_port),
         "--host", "127.0.0.1"
     ]
     if args.extra_args:
@@ -269,7 +281,7 @@ def main():
 
     log(f"Launching Host Server with Android Co-Processor (Split L={args.split_layer})...")
     log(f"Command: {' '.join(cmd)}")
-    log(f"API will be available at: http://127.0.0.1:{args.port}/v1")
+    log(f"API will be available at: http://127.0.0.1:{host_port}/v1")
 
     try:
         subprocess.run(cmd, env=env)
